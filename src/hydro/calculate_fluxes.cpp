@@ -35,6 +35,7 @@
 
 void Hydro::CalculateFluxes(AthenaArray<Real> &w, FaceField &b,
                             AthenaArray<Real> &bcc, const int order) {
+  Kokkos::Profiling::pushRegion("Hydro::CalculateFluxes");
   MeshBlock *pmb = pmy_block;
   int is = pmb->is; int js = pmb->js; int ks = pmb->ks;
   int ie = pmb->ie; int je = pmb->je; int ke = pmb->ke;
@@ -77,6 +78,7 @@ void Hydro::CalculateFluxes(AthenaArray<Real> &w, FaceField &b,
   for (int k=kl; k<=ku; ++k) {
     for (int j=jl; j<=ju; ++j) {
       // reconstruct L/R states
+      Kokkos::Profiling::pushRegion("Reconstruction i-dir");
       if (order == 1) {
         pmb->precon->DonorCellX1(k, j, is-1, ie+1, w, bcc, wl_, wr_);
       } else if (order == 2) {
@@ -84,8 +86,13 @@ void Hydro::CalculateFluxes(AthenaArray<Real> &w, FaceField &b,
       } else {
         pmb->precon->PiecewiseParabolicX1(k, j, is-1, ie+1, w, bcc, wl_, wr_);
       }
+      Kokkos::Profiling::popRegion();
 
+      Kokkos::Profiling::pushRegion("CenterWidth1");
       pmb->pcoord->CenterWidth1(k, j, is, ie+1, dxw_);
+      Kokkos::Profiling::popRegion();
+
+      Kokkos::Profiling::pushRegion("Riemann i");
 #if !MAGNETIC_FIELDS_ENABLED  // Hydro:
       RiemannSolver(k, j, is, ie+1, IVX, wl_, wr_, x1flux, dxw_);
 #else  // MHD:
@@ -93,6 +100,7 @@ void Hydro::CalculateFluxes(AthenaArray<Real> &w, FaceField &b,
       // x1flux(IBZ) = (v1*b3 - v3*b1) =  EMFY
       RiemannSolver(k, j, is, ie+1, IVX, b1, wl_, wr_, x1flux, e3x1, e2x1, w_x1f, dxw_);
 #endif
+      Kokkos::Profiling::popRegion();
 
       if (order == 4) {
         for (int n=0; n<NWAVE; n++) {
@@ -176,6 +184,7 @@ void Hydro::CalculateFluxes(AthenaArray<Real> &w, FaceField &b,
 
     for (int k=kl; k<=ku; ++k) {
       // reconstruct the first row
+      Kokkos::Profiling::pushRegion("Reconstruction j-dir first row");
       if (order == 1) {
         pmb->precon->DonorCellX2(k, js-1, il, iu, w, bcc, wl_, wr_);
       } else if (order == 2) {
@@ -183,8 +192,10 @@ void Hydro::CalculateFluxes(AthenaArray<Real> &w, FaceField &b,
       } else {
         pmb->precon->PiecewiseParabolicX2(k, js-1, il, iu, w, bcc, wl_, wr_);
       }
+      Kokkos::Profiling::popRegion();
       for (int j=js; j<=je+1; ++j) {
         // reconstruct L/R states at j
+        Kokkos::Profiling::pushRegion("Reconstruction j-dir");
         if (order == 1) {
           pmb->precon->DonorCellX2(k, j, il, iu, w, bcc, wlb_, wr_);
         } else if (order == 2) {
@@ -192,8 +203,13 @@ void Hydro::CalculateFluxes(AthenaArray<Real> &w, FaceField &b,
         } else {
           pmb->precon->PiecewiseParabolicX2(k, j, il, iu, w, bcc, wlb_, wr_);
         }
+        Kokkos::Profiling::popRegion();
 
+        Kokkos::Profiling::pushRegion("CenterWidth2");
         pmb->pcoord->CenterWidth2(k, j, il, iu, dxw_);
+        Kokkos::Profiling::popRegion();
+
+        Kokkos::Profiling::pushRegion("Riemann j");
 #if !MAGNETIC_FIELDS_ENABLED  // Hydro:
         RiemannSolver(k, j, il, iu, IVY, wl_, wr_, x2flux, dxw_);
 #else  // MHD:
@@ -201,6 +217,7 @@ void Hydro::CalculateFluxes(AthenaArray<Real> &w, FaceField &b,
         // flx(IBZ) = (v2*b1 - v1*b2) =  EMFZ
         RiemannSolver(k, j, il, iu, IVY, b2, wl_, wr_, x2flux, e1x2, e3x2, w_x2f, dxw_);
 #endif
+        Kokkos::Profiling::popRegion();
 
         if (order == 4) {
           for (int n=0; n<NWAVE; n++) {
@@ -281,6 +298,7 @@ void Hydro::CalculateFluxes(AthenaArray<Real> &w, FaceField &b,
 
     for (int j=jl; j<=ju; ++j) { // this loop ordering is intentional
       // reconstruct the first row
+      Kokkos::Profiling::pushRegion("Reconstruction k-dir first row");
       if (order == 1) {
         pmb->precon->DonorCellX3(ks-1, j, il, iu, w, bcc, wl_, wr_);
       } else if (order == 2) {
@@ -288,8 +306,10 @@ void Hydro::CalculateFluxes(AthenaArray<Real> &w, FaceField &b,
       } else {
         pmb->precon->PiecewiseParabolicX3(ks-1, j, il, iu, w, bcc, wl_, wr_);
       }
+      Kokkos::Profiling::popRegion();
       for (int k=ks; k<=ke+1; ++k) {
         // reconstruct L/R states at k
+        Kokkos::Profiling::pushRegion("Reconstruction k-dir");
         if (order == 1) {
           pmb->precon->DonorCellX3(k, j, il, iu, w, bcc, wlb_, wr_);
         } else if (order == 2) {
@@ -297,8 +317,13 @@ void Hydro::CalculateFluxes(AthenaArray<Real> &w, FaceField &b,
         } else {
           pmb->precon->PiecewiseParabolicX3(k, j, il, iu, w, bcc, wlb_, wr_);
         }
+        Kokkos::Profiling::popRegion();
 
+        Kokkos::Profiling::pushRegion("CenterWidth3");
         pmb->pcoord->CenterWidth3(k, j, il, iu, dxw_);
+        Kokkos::Profiling::popRegion();
+
+        Kokkos::Profiling::pushRegion("Riemann k");
 #if !MAGNETIC_FIELDS_ENABLED  // Hydro:
         RiemannSolver(k, j, il, iu, IVZ, wl_, wr_, x3flux, dxw_);
 #else  // MHD:
@@ -306,6 +331,8 @@ void Hydro::CalculateFluxes(AthenaArray<Real> &w, FaceField &b,
         // flx(IBZ) = (v3*b2 - v2*b3) =  EMFX
         RiemannSolver(k, j, il, iu, IVZ, b3, wl_, wr_, x3flux, e2x3, e1x3, w_x3f, dxw_);
 #endif
+        Kokkos::Profiling::popRegion();
+
         if (order == 4) {
           for (int n=0; n<NWAVE; n++) {
             for (int i=il; i<=iu; i++) {
@@ -377,6 +404,7 @@ void Hydro::CalculateFluxes(AthenaArray<Real> &w, FaceField &b,
   if (!STS_ENABLED) { // add diffusion fluxes
     AddDiffusionFluxes();
   }
+  Kokkos::Profiling::popRegion(); // Hydro::CalculateFluxes
   return;
 }
 

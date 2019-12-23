@@ -11,6 +11,14 @@ RSOLVER_FILE = @RSOLVER_FILE@
 RSOLVER_DIR = @RSOLVER_DIR@
 MPIFFT_FILE = @MPIFFT_FILE@
 
+# Kokkos configuration
+KOKKOS_PATH = @KOKKOS_PATH@
+KOKKOS_ARCH = @KOKKOS_ARCH@
+KOKKOS_DEVICES = @KOKKOS_DEVICES@
+KOKKOS_OPTIONS = @KOKKOS_OPTIONS@
+KOKKOS_CUDA_OPTIONS = @KOKKOS_CUDA_OPTIONS@
+NVCC_WRAPPER_DEFAULT_COMPILER = @NVCC_WRAPPER_DEFAULT_COMPILER@
+
 # General compiler specifications
 
 CXX := @COMPILER_COMMAND@
@@ -70,6 +78,10 @@ VPATH := $(SRC_DIRS)
 
 all : dirs $(EXECUTABLE)
 
+# Include Kokkos build vars. Added here as it defines own targets,
+# # see https://github.com/kokkos/kokkos/wiki/Compiling
+include $(KOKKOS_PATH)/Makefile.kokkos
+
 objs : dirs $(OBJ_FILES)
 
 dirs : $(EXE_DIR) $(OBJ_DIR)
@@ -90,13 +102,13 @@ $(OBJ_DIR):
 
 # Link objects into executable
 
-$(EXECUTABLE) : $(OBJ_FILES)
-	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -o $@ $(OBJ_FILES) $(LDFLAGS) $(LDLIBS)
+$(EXECUTABLE) : $(OBJ_FILES) $(KOKKOS_LINK_DEPENDS)
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -o $@ $(OBJ_FILES) $(LDFLAGS) $(KOKKOS_LDFLAGS) $(LDLIBS) $(KOKKOS_LIBS)
 
 # Create objects from source files
 
 $(OBJ_DIR)%.o : %.cpp
-	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $< -o $@
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) $(KOKKOS_CXXFLAGS) -c $< -o $@
 
 # Process .gcno and .gcda files from obj/ into .cpp.gcov files (and .hpp.gcov, .h.gcov) in root directory
 # Rerun Gcov on all files if a single .gcda changes. Other options to consider: --preserve-paths -abcu

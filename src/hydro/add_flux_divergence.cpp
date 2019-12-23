@@ -35,6 +35,7 @@
 // the implementations remain completely independent / no inheritance is
 // used)
 void Hydro::AddFluxDivergence(const Real wght, AthenaArray<Real> &u_out) {
+  Kokkos::Profiling::pushRegion("AddFluxDivergence");
   MeshBlock *pmb = pmy_block;
   AthenaArray<Real> &x1flux = flux[X1DIR];
   AthenaArray<Real> &x2flux = flux[X2DIR];
@@ -89,5 +90,6 @@ void Hydro::AddFluxDivergence(const Real wght, AthenaArray<Real> &u_out) {
       }
     }
   }
+  Kokkos::Profiling::popRegion(); // AddFluxDivergence
   return;
 }

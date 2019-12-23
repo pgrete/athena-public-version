@@ -29,6 +29,14 @@
 #   --hdf5_path=path  path to HDF5 libraries (requires the HDF5 library)
 #   -fft              enable FFT (requires the FFTW library)
 #   --fftw_path=path  path to FFTW libraries (requires the FFTW library)
+#   --kokkos_path=path          path to Kokkos source
+#   --kokkos_arch=arch          use arch as Kokkos architecture string
+#   --kokkos_devices=xxx        use xxx as Kokkos devices string
+#   --kokkos_options=xxx        use xxx as Kokkos options string
+#   --kokkos_cuda_options=xxx   use xxx as Kokkos CUDA options string
+#   --nvcc_wrap_cxx=xxx         use xxx as NVCC_WRAPPER_DEFAULT_COMPILER for Kokkos
+#   --kokkos_loop=xxx           use xxx as Kokkos loop layout
+#   --kokkos_vector_length=xxx  use xxx as vector length of Kokkos TeamPolicy
 #   --grav=xxx        use xxx as the self-gravity solver
 #   --cxx=xxx         use xxx as the C++ compiler
 #   --ccmd=name       use name as the command to call the (non-MPI) C++ compiler
@@ -51,6 +59,9 @@ makefile_input = 'Makefile.in'
 makefile_output = 'Makefile'
 defsfile_input = 'src/defs.hpp.in'
 defsfile_output = 'src/defs.hpp'
+
+# Kokkos information string to be printed later
+Kokkos_info = ''
 
 # --- Step 1. Prepare parser, add each of the arguments ------------------
 athena_description = (
@@ -194,6 +205,55 @@ parser.add_argument('-fft',
 parser.add_argument('--fftw_path',
                     default='',
                     help='path to FFTW libraries')
+
+# --kokkos_path argument
+parser.add_argument('--kokkos_path',
+                    type=str,
+                    default='./kokkos',
+                    help='path to Kokkos source')
+
+# --kokkos_arch argument
+parser.add_argument('--kokkos_arch',
+                    type=str,
+                    default='',
+                    help='Kokkos architecture string')
+
+# --kokkos_devices argument
+parser.add_argument('--kokkos_devices',
+                    type=str,
+                    default='',
+                    help='Kokkos devices string')
+
+# --kokkos_options argument
+parser.add_argument('--kokkos_options',
+                    type=str,
+                    default='',
+                    help='Kokkos options string')
+
+# --kokkos_cuda_options argument
+parser.add_argument('--kokkos_cuda_options',
+                    type=str,
+                    default='',
+                    help='Kokkos CUDA options string')
+
+# --kokkos_cuda_options argument
+parser.add_argument('--nvcc_wrap_cxx',
+                    type=str,
+                    default='',
+                    help='Sets NVCC_WRAPPER_DEFAULT_COMPILER for Kokkos')
+
+# --kokkos_loop=[name] argument
+parser.add_argument('--kokkos_loop',
+                    default='default',
+                    choices=['default', '1DRange', 'MDRange',
+                             'TP-TVR', 'TP-TTR', 'TP-TTR-TVR', 'for'],
+                    help='Kokkos loop layout')
+
+# --kokkos_vector_length=[name] argument
+parser.add_argument('--kokkos_vector_length',
+                    default=-1,
+                    type=int,
+                    help='Kokkos vector length of TeamPolicy')
 
 # -hdf5 argument
 parser.add_argument('-hdf5',
@@ -347,6 +407,28 @@ if args['eos'][:8] == 'general/':
         raise SystemExit('### CONFIGURE ERROR: '
                          + 'General EOS is incompatible with flux ' + args['flux'])
 
+# Make sure Kokkos and OpenMP flags are aligned
+if args['omp'] and 'OpenMP' not in args['kokkos_devices']:
+    Kokkos_info += '\n### OpenMP:\n'
+
+    if args['kokkos_devices'] == '':
+        args['kokkos_devices'] = 'OpenMP'
+        Kokkos_info += '- Enabling Kokkos OpenMP device given "-omp".\n'
+    else:
+        args['kokkos_devices'] += ',OpenMP'
+        Kokkos_info += '- Adding Kokkos OpenMP device given "-omp".\n'
+
+if 'OpenMP' in args['kokkos_devices'] and not args['omp']:
+    Kokkos_info += '\n### OpenMP:\n'
+    Kokkos_info += '- Enabling "-omp" given requested Kokkos OpenMP device.\n'
+    args['omp'] = True
+
+# Make sure Kokkos loop type and devices are compatible
+if ((args['kokkos_loop'] == 'simd-for' or args['kokkos_loop'] == 'TP-TVR')
+        and 'Cuda' in args['kokkos_devices']):
+    raise SystemExit('### CONFIGURE ERROR: '
+                     + args['kokkos_loop'] + ' loop not compatible with Cuda')
+
 # --- Step 3. Set definitions and Makefile options based on above argument
 
 # Prepare dictionaries of substitutions to be made
@@ -454,7 +536,7 @@ if args['cxx'] == 'g++':
     definitions['COMPILER_CHOICE'] = 'g++'
     definitions['COMPILER_COMMAND'] = makefile_options['COMPILER_COMMAND'] = 'g++'
     makefile_options['PREPROCESSOR_FLAGS'] = ''
-    makefile_options['COMPILER_FLAGS'] = '-O3 -std=c++11'
+    makefile_options['COMPILER_FLAGS'] = '-O3'
     makefile_options['LINKER_FLAGS'] = ''
     makefile_options['LIBRARY_FLAGS'] = ''
 if args['cxx'] == 'g++-simd':
@@ -463,8 +545,8 @@ if args['cxx'] == 'g++-simd':
     definitions['COMPILER_COMMAND'] = makefile_options['COMPILER_COMMAND'] = 'g++'
     makefile_options['PREPROCESSOR_FLAGS'] = ''
     makefile_options['COMPILER_FLAGS'] = (
-        '-O3 -std=c++11 -fopenmp-simd -fwhole-program -flto -ffast-math '
-        '-march=native -fprefetch-loop-arrays'
+        '-O3 -fopenmp-simd -fwhole-program -flto -ffast-math '
+        '-fprefetch-loop-arrays'
         # -march=skylake-avx512, skylake, core-avx2
         # -mprefer-vector-width=128  # available in gcc-8, but not gcc-7
         # -mtune=native, generic, broadwell
@@ -479,7 +561,7 @@ if args['cxx'] == 'icpc':
     definitions['COMPILER_COMMAND'] = makefile_options['COMPILER_COMMAND'] = 'icpc'
     makefile_options['PREPROCESSOR_FLAGS'] = ''
     makefile_options['COMPILER_FLAGS'] = (
-      '-O3 -std=c++11 -ipo -xhost -inline-forceinline -qopenmp-simd -qopt-prefetch=4 '
+      '-O3 -ipo -inline-forceinline -qopenmp-simd -qopt-prefetch=4 '
       '-qoverride-limits'  # -qopt-report-phase=ipo (does nothing without -ipo)
     )
     # -qopt-zmm-usage=high'  # typically harms multi-core performance on Skylake Xeon
@@ -492,7 +574,7 @@ if args['cxx'] == 'icpc-debug':
     definitions['COMPILER_COMMAND'] = makefile_options['COMPILER_COMMAND'] = 'icpc'
     makefile_options['PREPROCESSOR_FLAGS'] = ''
     makefile_options['COMPILER_FLAGS'] = (
-      '-O3 -std=c++11 -xhost -qopenmp-simd -fp-model precise -qopt-prefetch=4 '
+      '-O3 -qopenmp-simd -fp-model precise -qopt-prefetch=4 '
       '-qopt-report=5 -qopt-report-phase=openmp,vec -g -qoverride-limits'
     )
     makefile_options['LINKER_FLAGS'] = ''
@@ -504,7 +586,7 @@ if args['cxx'] == 'icpc-phi':
     definitions['COMPILER_COMMAND'] = makefile_options['COMPILER_COMMAND'] = 'icpc'
     makefile_options['PREPROCESSOR_FLAGS'] = ''
     makefile_options['COMPILER_FLAGS'] = (
-      '-O3 -std=c++11 -ipo -xMIC-AVX512 -inline-forceinline -qopenmp-simd '
+      '-O3 -ipo -inline-forceinline -qopenmp-simd '
       '-qopt-prefetch=4 -qoverride-limits'
     )
     makefile_options['LINKER_FLAGS'] = ''
@@ -515,7 +597,7 @@ if args['cxx'] == 'cray':
     definitions['COMPILER_CHOICE'] = 'cray'
     definitions['COMPILER_COMMAND'] = makefile_options['COMPILER_COMMAND'] = 'CC'
     makefile_options['PREPROCESSOR_FLAGS'] = ''
-    makefile_options['COMPILER_FLAGS'] = '-O3 -h std=c++11 -h aggress -h vector3 -hfp3'
+    makefile_options['COMPILER_FLAGS'] = '-O3 -h aggress -h vector3 -hfp3'
     makefile_options['LINKER_FLAGS'] = '-hwp -hpl=obj/lib'
     makefile_options['LIBRARY_FLAGS'] = '-lm'
 if args['cxx'] == 'bgxlc++':
@@ -543,7 +625,7 @@ if args['cxx'] == 'clang++':
     definitions['COMPILER_CHOICE'] = 'clang++'
     definitions['COMPILER_COMMAND'] = makefile_options['COMPILER_COMMAND'] = 'clang++'
     makefile_options['PREPROCESSOR_FLAGS'] = ''
-    makefile_options['COMPILER_FLAGS'] = '-O3 -std=c++11'
+    makefile_options['COMPILER_FLAGS'] = '-O3'
     makefile_options['LINKER_FLAGS'] = ''
     makefile_options['LIBRARY_FLAGS'] = ''
 if args['cxx'] == 'clang++-simd':
@@ -552,7 +634,7 @@ if args['cxx'] == 'clang++-simd':
     definitions['COMPILER_CHOICE'] = 'clang++-simd'
     definitions['COMPILER_COMMAND'] = makefile_options['COMPILER_COMMAND'] = 'clang++'
     makefile_options['PREPROCESSOR_FLAGS'] = ''
-    makefile_options['COMPILER_FLAGS'] = '-O3 -std=c++11 -fopenmp-simd'
+    makefile_options['COMPILER_FLAGS'] = '-O3 -fopenmp-simd'
     makefile_options['LINKER_FLAGS'] = ''
     makefile_options['LIBRARY_FLAGS'] = ''
 if args['cxx'] == 'clang++-apple':
@@ -560,7 +642,7 @@ if args['cxx'] == 'clang++-apple':
     definitions['COMPILER_CHOICE'] = 'clang++-apple'
     definitions['COMPILER_COMMAND'] = makefile_options['COMPILER_COMMAND'] = 'clang++'
     makefile_options['PREPROCESSOR_FLAGS'] = ''
-    makefile_options['COMPILER_FLAGS'] = '-O3 -std=c++11'
+    makefile_options['COMPILER_FLAGS'] = '-O3'
     makefile_options['LINKER_FLAGS'] = ''
     makefile_options['LIBRARY_FLAGS'] = ''
 
@@ -579,13 +661,13 @@ if args['debug']:
             or args['cxx'] == 'icpc' or args['cxx'] == 'icpc-debug'
             or args['cxx'] == 'clang++' or args['cxx'] == 'clang++-simd'
             or args['cxx'] == 'clang++-apple'):
-        makefile_options['COMPILER_FLAGS'] = '-O0 --std=c++11 -g'  # -Og
+        makefile_options['COMPILER_FLAGS'] = '-O0 -g'  # -Og
     if args['cxx'] == 'cray':
-        makefile_options['COMPILER_FLAGS'] = '-O0 -h std=c++11'
+        makefile_options['COMPILER_FLAGS'] = '-O0'
     if args['cxx'] == 'bgxlc++':
         makefile_options['COMPILER_FLAGS'] = '-O0 -g -qlanglvl=extended0x'
     if args['cxx'] == 'icpc-phi':
-        makefile_options['COMPILER_FLAGS'] = '-O0 --std=c++11 -g -xMIC-AVX512'
+        makefile_options['COMPILER_FLAGS'] = '-O0 -g'
 else:
     definitions['DEBUG_OPTION'] = 'NOT_DEBUG'
 
@@ -631,6 +713,8 @@ else:
 # -mpi argument
 if args['mpi']:
     definitions['MPI_OPTION'] = 'MPI_PARALLEL'
+    # Saving original compiler command for later use in Kokkos nvcc_wrapper
+    MPI_CXX = makefile_options['COMPILER_COMMAND']
     if (args['cxx'] == 'g++' or args['cxx'] == 'icpc' or args['cxx'] == 'icpc-debug'
             or args['cxx'] == 'icpc-phi' or args['cxx'] == 'g++-simd'
             or args['cxx'] == 'clang++' or args['cxx'] == 'clang++-simd'
@@ -702,6 +786,88 @@ if args['fft']:
     if args['mpi']:
         makefile_options['MPIFFT_FILE'] = ' $(wildcard src/fft/plimpton/*.cpp)'
     makefile_options['LIBRARY_FLAGS'] += ' -lfftw3'
+
+# -kokkos arguments
+makefile_options['KOKKOS_PATH'] = args['kokkos_path']
+
+makefile_options['KOKKOS_ARCH'] = args['kokkos_arch']
+
+makefile_options['KOKKOS_DEVICES'] = args['kokkos_devices']
+
+makefile_options['KOKKOS_OPTIONS'] = args['kokkos_options']
+# always disable deprecated Kokkos code
+if makefile_options['KOKKOS_OPTIONS'] != '':
+    makefile_options['KOKKOS_OPTIONS'] += ','
+makefile_options['KOKKOS_OPTIONS'] += 'disable_deprecated_code'
+
+makefile_options['KOKKOS_CUDA_OPTIONS'] = args['kokkos_cuda_options']
+makefile_options['NVCC_WRAPPER_DEFAULT_COMPILER'] = args['nvcc_wrap_cxx']
+
+if 'Cuda' in makefile_options['KOKKOS_DEVICES']:
+    # always enable Cuda lambdas (for better performance)
+    if makefile_options['KOKKOS_CUDA_OPTIONS'] != '':
+        makefile_options['KOKKOS_CUDA_OPTIONS'] += ','
+    makefile_options['KOKKOS_CUDA_OPTIONS'] += 'enable_lambda'
+
+    # override compiler to use nvcc in non-mpi case
+    if not args['mpi']:
+        Kokkos_info += '\n### Using Cuda without MPI:\n'
+        Kokkos_info += '- Overriding compiler command with nvcc_wrapper.\n'
+        Kokkos_info += ('- Setting NVCC_WRAPPER_DEFAULT_COMPILER to original "%s".\n' %
+                        makefile_options['COMPILER_COMMAND'])
+        makefile_options['NVCC_WRAPPER_DEFAULT_COMPILER'] = \
+            makefile_options['COMPILER_COMMAND']
+        makefile_options['COMPILER_COMMAND'] = \
+            makefile_options['KOKKOS_PATH'] + '/bin/nvcc_wrapper'
+
+    else:
+        Kokkos_info += '\n### Using Cuda with MPI:\n'
+        Kokkos_info += \
+            '- Make sure that your MPI wrapper points to the nvcc_wrapper, e.g.,\n'
+        Kokkos_info += ('  - OMPI_CXX=$(pwd)/%s/bin/nvcc_wrapper for OpenMPI or \n' %
+                        makefile_options['KOKKOS_PATH'])
+        Kokkos_info += ('  - MPICH_CXX=$(pwd)/%s/bin/nvcc_wrapper for MVAPICH, \n' %
+                        makefile_options['KOKKOS_PATH'])
+        Kokkos_info += \
+            '  - see vendor/computing center documentation for specific details\n'
+        Kokkos_info += '- Make sure that --nvcc_wrap_cxx is set to the original\n'
+        Kokkos_info += '  compiler of the MPI wrapper.\n'
+        if makefile_options['NVCC_WRAPPER_DEFAULT_COMPILER'] == '':
+            Kokkos_info += \
+                '  --nvcc_wrap_cxx not set. Using best guess (!) "%s"\n' % MPI_CXX
+            makefile_options['NVCC_WRAPPER_DEFAULT_COMPILER'] = MPI_CXX
+
+if args['kokkos_loop'] == 'default':
+    args['kokkos_loop'] = '1DRange' if 'Cuda' in args['kokkos_devices'] else 'for'
+
+definitions['KOKKOS_VECTOR_LENGTH'] = '-1'
+
+if args['kokkos_loop'] == '1DRange':
+    definitions['KOKKOS_LOOP_LAYOUT'] = 'MANUAL1D_LOOP'
+elif args['kokkos_loop'] == 'MDRange':
+    definitions['KOKKOS_LOOP_LAYOUT'] = 'MDRANGE_LOOP'
+elif args['kokkos_loop'] == 'for':
+    definitions['KOKKOS_LOOP_LAYOUT'] = 'FOR_LOOP'
+elif args['kokkos_loop'] == 'TP-TVR':
+    definitions['KOKKOS_LOOP_LAYOUT'] = 'TP_INNERX_LOOP\n#define INNER_TVR_LOOP'
+    definitions['KOKKOS_VECTOR_LENGTH'] = ('32' if args['kokkos_vector_length'] == -1
+                                           else str(args['kokkos_vector_length']))
+elif args['kokkos_loop'] == 'TP-TTR':
+    definitions['KOKKOS_LOOP_LAYOUT'] = 'TP_INNERX_LOOP\n#define INNER_TTR_LOOP'
+    definitions['KOKKOS_VECTOR_LENGTH'] = ('1' if args['kokkos_vector_length'] == -1
+                                           else str(args['kokkos_vector_length']))
+elif args['kokkos_loop'] == 'TP-TTR-TVR':
+    definitions['KOKKOS_LOOP_LAYOUT'] = 'TPTTRTVR_LOOP'
+    definitions['KOKKOS_VECTOR_LENGTH'] = ('32' if args['kokkos_vector_length'] == -1
+                                           else str(args['kokkos_vector_length']))
+else:
+    raise SystemExit('### CONFIGURE ERROR: kokko_loop argument unknown')
+
+if Kokkos_info != '':
+    print('############# Kokkos information #######################################')
+    print(Kokkos_info)
+    print('########################################################################')
+
 
 # -hdf5 argument
 if args['hdf5']:
@@ -814,6 +980,15 @@ print('  Number of ghost cells:      ' + args['nghost'])
 print('  MPI parallelism:            ' + ('ON' if args['mpi'] else 'OFF'))
 print('  OpenMP parallelism:         ' + ('ON' if args['omp'] else 'OFF'))
 print('  FFT:                        ' + ('ON' if args['fft'] else 'OFF'))
+print('  KOKKOS_PATH                 ' + makefile_options['KOKKOS_PATH'])
+print('  KOKKOS_ARCH                 ' + makefile_options['KOKKOS_ARCH'])
+print('  KOKKOS_DEVICES              ' + makefile_options['KOKKOS_DEVICES'])
+print('  KOKKOS loop type            ' + args['kokkos_loop'])
+print('  KOKKOS vector length        ' + definitions['KOKKOS_VECTOR_LENGTH'])
+print('  KOKKOS_OPTIONS              ' + makefile_options['KOKKOS_OPTIONS'])
+print('  KOKKOS_CUDA_OPTIONS         ' + makefile_options['KOKKOS_CUDA_OPTIONS'])
+print('  NVCC_WRAPPER_COMPILER       '
+      + makefile_options['NVCC_WRAPPER_DEFAULT_COMPILER'])
 print('  HDF5 output:                ' + ('ON' if args['hdf5'] else 'OFF'))
 if args['hdf5']:
     print('  HDF5 precision:             ' + ('double' if args['h5double'] else 'single'))

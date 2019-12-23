@@ -35,6 +35,7 @@
 //  \brief Cycles over all MeshBlocks and writes data to a single restart file.
 
 void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin, bool force_write) {
+  Kokkos::Profiling::pushRegion("RestartOutput::WriteOutputFile");
   MeshBlock *pmb;
   IOWrapper resfile;
   IOWrapperSizeT listsize, headeroffset, datasize;
@@ -207,4 +208,5 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin, bool force_wr
   resfile.Write_at_all(data, datasize, mynb, myoffset);
   resfile.Close();
   delete [] data;
+  Kokkos::Profiling::popRegion(); // RestartOutput::WriteOutputFile
 }

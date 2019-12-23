@@ -56,6 +56,7 @@ using H5Real = float;
 //         one file per output using parallel IO.
 
 void ATHDF5Output::WriteOutputFile(Mesh *pm, ParameterInput *pin, bool flag) {
+  Kokkos::Profiling::pushRegion("ATHDF5Output::WriteOutputFile");
   // HDF5 structures
   hid_t file;                                  // file to be written to
   hsize_t dims_start[5], dims_count[5];        // array sizes
@@ -789,6 +790,7 @@ void ATHDF5Output::WriteOutputFile(Mesh *pm, ParameterInput *pin, bool flag) {
   output_params.next_time += output_params.dt;
   pin->SetInteger(output_params.block_name, "file_number", output_params.file_number);
   pin->SetReal(output_params.block_name, "next_time", output_params.next_time);
+  Kokkos::Profiling::popRegion(); // ATHDF5Output::WriteOutputFile
 }
 
 //----------------------------------------------------------------------------------------
