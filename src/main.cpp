@@ -68,7 +68,7 @@ int main(int argc, char *argv[]) {
   int wtlim = 0;
   std::uint64_t mbcnt = 0;
 
-  //--- Step 1. --------------------------------------------------------------------------
+  //--- Step 1.1 --------------------------------------------------------------------------
   // Initialize MPI environment, if necessary
 
 #ifdef MPI_PARALLEL
@@ -114,6 +114,11 @@ int main(int argc, char *argv[]) {
   Globals::nranks  = 1;
 #endif  // MPI_PARALLEL
 
+  //--- Step 1.2 --------------------------------------------------------------------------
+  // Initialize Kokkos
+  Kokkos::initialize( argc, argv );
+  {
+
   //--- Step 2. --------------------------------------------------------------------------
   // Check for command line options and respond.
 
@@ -135,6 +140,7 @@ int main(int argc, char *argv[]) {
             if (Globals::my_rank == 0) {
               std::cout << "### FATAL ERROR in main" << std::endl
                         << "-" << opt_letter << " must be followed by a valid argument\n";
+              Kokkos::finalize();
 #ifdef MPI_PARALLEL
               MPI_Finalize();
 #endif
@@ -167,6 +173,7 @@ int main(int argc, char *argv[]) {
           break;
         case 'c':
           if (Globals::my_rank == 0) ShowConfig();
+          Kokkos::finalize();
 #ifdef MPI_PARALLEL
           MPI_Finalize();
 #endif
@@ -188,6 +195,7 @@ int main(int argc, char *argv[]) {
             std::cout << "  -h              this help\n";
             ShowConfig();
           }
+          Kokkos::finalize();
 #ifdef MPI_PARALLEL
           MPI_Finalize();
 #endif
@@ -201,6 +209,7 @@ int main(int argc, char *argv[]) {
     // no input file is given
     std::cout << "### FATAL ERROR in main" << std::endl
               << "No input file or restart file is specified." << std::endl;
+    Kokkos::finalize();
 #ifdef MPI_PARALLEL
     MPI_Finalize();
 #endif
@@ -245,6 +254,7 @@ int main(int argc, char *argv[]) {
               << "memory allocation failed initializing class ParameterInput: "
               << ba.what() << std::endl;
     if (res_flag == 1) restartfile.Close();
+    Kokkos::finalize();
 #ifdef MPI_PARALLEL
     MPI_Finalize();
 #endif
@@ -253,6 +263,7 @@ int main(int argc, char *argv[]) {
   catch(std::exception const& ex) {
     std::cout << ex.what() << std::endl;  // prints diagnostic message
     if (res_flag == 1) restartfile.Close();
+    Kokkos::finalize();
 #ifdef MPI_PARALLEL
     MPI_Finalize();
 #endif
@@ -279,6 +290,7 @@ int main(int argc, char *argv[]) {
               << "memory allocation failed initializing class Mesh: "
               << ba.what() << std::endl;
     if (res_flag == 1) restartfile.Close();
+    Kokkos::finalize();
 #ifdef MPI_PARALLEL
     MPI_Finalize();
 #endif
@@ -287,6 +299,7 @@ int main(int argc, char *argv[]) {
   catch(std::exception const& ex) {
     std::cout << ex.what() << std::endl;  // prints diagnostic message
     if (res_flag == 1) restartfile.Close();
+    Kokkos::finalize();
 #ifdef MPI_PARALLEL
     MPI_Finalize();
 #endif
@@ -304,6 +317,7 @@ int main(int argc, char *argv[]) {
   if (narg_flag) {
     if (Globals::my_rank == 0) pinput->ParameterDump(std::cout);
     if (res_flag == 1) restartfile.Close();
+    Kokkos::finalize();
 #ifdef MPI_PARALLEL
     MPI_Finalize();
 #endif
@@ -314,6 +328,7 @@ int main(int argc, char *argv[]) {
 
   // Quit if -m was on cmdline.  This option builds and outputs mesh structure.
   if (mesh_flag > 0) {
+    Kokkos::finalize();
 #ifdef MPI_PARALLEL
     MPI_Finalize();
 #endif
@@ -333,6 +348,7 @@ int main(int argc, char *argv[]) {
   catch(std::bad_alloc& ba) {
     std::cout << "### FATAL ERROR in main" << std::endl << "memory allocation failed "
               << "in creating task list " << ba.what() << std::endl;
+    Kokkos::finalize();
 #ifdef MPI_PARALLEL
     MPI_Finalize();
 #endif
@@ -351,6 +367,7 @@ int main(int argc, char *argv[]) {
     catch(std::bad_alloc& ba) {
       std::cout << "### FATAL ERROR in main" << std::endl << "memory allocation failed "
                 << "in creating task list " << ba.what() << std::endl;
+      Kokkos::finalize();
 #ifdef MPI_PARALLEL
       MPI_Finalize();
 #endif
@@ -371,6 +388,7 @@ int main(int argc, char *argv[]) {
   catch(std::bad_alloc& ba) {
     std::cout << "### FATAL ERROR in main" << std::endl << "memory allocation failed "
               << "in problem generator " << ba.what() << std::endl;
+    Kokkos::finalize();
 #ifdef MPI_PARALLEL
     MPI_Finalize();
 #endif
@@ -378,6 +396,7 @@ int main(int argc, char *argv[]) {
   }
   catch(std::exception const& ex) {
     std::cout << ex.what() << std::endl;  // prints diagnostic message
+    Kokkos::finalize();
 #ifdef MPI_PARALLEL
     MPI_Finalize();
 #endif
@@ -401,6 +420,7 @@ int main(int argc, char *argv[]) {
     std::cout << "### FATAL ERROR in main" << std::endl
               << "memory allocation failed setting initial conditions: "
               << ba.what() << std::endl;
+    Kokkos::finalize();
 #ifdef MPI_PARALLEL
     MPI_Finalize();
 #endif
@@ -408,6 +428,7 @@ int main(int argc, char *argv[]) {
   }
   catch(std::exception const& ex) {
     std::cout << ex.what() << std::endl;  // prints diagnostic message
+    Kokkos::finalize();
 #ifdef MPI_PARALLEL
     MPI_Finalize();
 #endif
@@ -474,6 +495,7 @@ int main(int argc, char *argv[]) {
     catch(std::bad_alloc& ba) {
       std::cout << "### FATAL ERROR in main" << std::endl
                 << "memory allocation failed during output: " << ba.what() <<std::endl;
+      Kokkos::finalize();
 #ifdef MPI_PARALLEL
       MPI_Finalize();
 #endif
@@ -481,6 +503,7 @@ int main(int argc, char *argv[]) {
     }
     catch(std::exception const& ex) {
       std::cout << ex.what() << std::endl;  // prints diagnostic message
+      Kokkos::finalize();
 #ifdef MPI_PARALLEL
       MPI_Finalize();
 #endif
@@ -509,6 +532,7 @@ int main(int argc, char *argv[]) {
   catch(std::bad_alloc& ba) {
     std::cout << "### FATAL ERROR in main" << std::endl
               << "memory allocation failed during output: " << ba.what() <<std::endl;
+    Kokkos::finalize();
 #ifdef MPI_PARALLEL
     MPI_Finalize();
 #endif
@@ -516,6 +540,7 @@ int main(int argc, char *argv[]) {
   }
   catch(std::exception const& ex) {
     std::cout << ex.what() << std::endl;  // prints diagnostic message
+    Kokkos::finalize();
 #ifdef MPI_PARALLEL
     MPI_Finalize();
 #endif
@@ -575,6 +600,9 @@ int main(int argc, char *argv[]) {
   delete pmesh;
   delete ptlist;
   delete pouts;
+
+  }
+  Kokkos::finalize();
 
 #ifdef MPI_PARALLEL
   MPI_Finalize();
