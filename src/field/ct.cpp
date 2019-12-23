@@ -29,6 +29,7 @@
 //  \brief Constrained Transport implementation of dB/dt = -Curl(E), where E=-(v X B)
 
 void Field::CT(const Real wght, FaceField &b_out) {
+  Kokkos::Profiling::pushRegion("Field::CT");
   MeshBlock *pmb=pmy_block;
   int is = pmb->is; int js = pmb->js; int ks = pmb->ks;
   int ie = pmb->ie; int je = pmb->je; int ke = pmb->ke;
@@ -112,5 +113,6 @@ void Field::CT(const Real wght, FaceField &b_out) {
       }
     }
   }
+  Kokkos::Profiling::popRegion(); // Field::CT
   return;
 }

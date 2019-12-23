@@ -26,6 +26,7 @@
 //  \brief calculate the corner EMFs
 
 void Field::ComputeCornerE(AthenaArray<Real> &w, AthenaArray<Real> &bcc) {
+  Kokkos::Profiling::pushRegion("Field::ComputeCornerE");
   MeshBlock *pmb = pmy_block;
   int is = pmb->is; int js = pmb->js; int ks = pmb->ks;
   int ie = pmb->ie; int je = pmb->je; int ke = pmb->ke;
@@ -44,6 +45,7 @@ void Field::ComputeCornerE(AthenaArray<Real> &w, AthenaArray<Real> &bcc) {
     }
     if (!STS_ENABLED) // add diffusion flux
       if (fdif.field_diffusion_defined) fdif.AddEMF(fdif.e_oa, e);
+    Kokkos::Profiling::popRegion(); // "Field::ComputeCornerE
     return;
   }
 
@@ -212,6 +214,7 @@ void Field::ComputeCornerE(AthenaArray<Real> &w, AthenaArray<Real> &bcc) {
   if (!STS_ENABLED) // add diffusion flux
     if (fdif.field_diffusion_defined) fdif.AddEMF(fdif.e_oa, e);
 
+  Kokkos::Profiling::popRegion(); // Field::ComputeCornerE
   return;
 }
 

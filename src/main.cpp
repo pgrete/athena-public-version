@@ -450,10 +450,12 @@ int main(int argc, char *argv[]) {
 
   while ((pmesh->time < pmesh->tlim) &&
          (pmesh->nlim < 0 || pmesh->ncycle < pmesh->nlim)) {
+    Kokkos::Profiling::pushRegion("Main loop cycle");
     if (Globals::my_rank == 0)
       pmesh->OutputCycleDiagnostics();
 
     if (STS_ENABLED) {
+      Kokkos::Profiling::pushRegion("STS");
       // compute nstages for this STS
       Real my_dt = pmesh->dt;
       Real dt_parabolic  = pmesh->dt_parabolic;
@@ -463,28 +465,41 @@ int main(int argc, char *argv[]) {
       // take super-timestep
       for (int stage=1; stage<=pststlist->nstages; ++stage)
         pststlist->DoTaskListOneStage(pmesh,stage);
+      Kokkos::Profiling::popRegion(); // STS
     }
 
+    Kokkos::Profiling::pushRegion("Driving turbulence");
     if (pmesh->turb_flag > 1) pmesh->ptrbd->Driving(); // driven turbulence
+    Kokkos::Profiling::popRegion(); // Driving turbulence
 
     for (int stage=1; stage<=ptlist->nstages; ++stage) {
+      Kokkos::Profiling::pushRegion("Self gravity");
       if (SELF_GRAVITY_ENABLED == 1) // fft (flag 0 for discrete kernel, 1 for continuous)
         pmesh->pfgrd->Solve(stage, 0);
       else if (SELF_GRAVITY_ENABLED == 2) // multigrid
         pmesh->pmgrd->Solve(stage);
+      Kokkos::Profiling::popRegion(); // Self gravity
+      Kokkos::Profiling::pushRegion("DoTaskListOneStage");
       ptlist->DoTaskListOneStage(pmesh, stage);
+      Kokkos::Profiling::popRegion();
     }
 
+    Kokkos::Profiling::pushRegion("UserWorkInLoop");
     pmesh->UserWorkInLoop();
+    Kokkos::Profiling::popRegion(); // UserWorkInLoop
 
     pmesh->ncycle++;
     pmesh->time += pmesh->dt;
     mbcnt += pmesh->nbtotal;
     pmesh->step_since_lb++;
 
+    Kokkos::Profiling::pushRegion("LoadBalancingAndAdaptiveMeshRefinement");
     pmesh->LoadBalancingAndAdaptiveMeshRefinement(pinput);
+    Kokkos::Profiling::popRegion(); // LoadBalancingAndAdaptiveMeshRefinement
 
+    Kokkos::Profiling::pushRegion("NewTimeStep");
     pmesh->NewTimeStep();
+    Kokkos::Profiling::popRegion(); // NewTimeStep
 #ifdef ENABLE_EXCEPTIONS
     try {
 #endif
@@ -515,6 +530,7 @@ int main(int argc, char *argv[]) {
     if (SignalHandler::CheckSignalFlags() != 0) {
       break;
     }
+  Kokkos::Profiling::popRegion(); // Main loop cycle
   } // END OF MAIN INTEGRATION LOOP ======================================================
   // Make final outputs, print diagnostics, clean up and terminate
 
@@ -548,7 +564,9 @@ int main(int argc, char *argv[]) {
   }
 #endif // ENABLE_EXCEPTIONS
 
+  Kokkos::Profiling::pushRegion("UserWorkAfterLoop");
   pmesh->UserWorkAfterLoop(pinput);
+  Kokkos::Profiling::popRegion(); // UserWorkAfterLoop
 
   //--- Step 10. -------------------------------------------------------------------------
   // Print diagnostic messages related to the end of the simulation

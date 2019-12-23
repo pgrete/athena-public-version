@@ -39,6 +39,7 @@
 // \brief calculate the minimum timestep within a MeshBlock
 
 void Hydro::NewBlockTimeStep() {
+  Kokkos::Profiling::pushRegion("Hydro::NewBlockTimeStep");
   MeshBlock *pmb = pmy_block;
   int is = pmb->is; int js = pmb->js; int ks = pmb->ks;
   int ie = pmb->ie; int je = pmb->je; int ke = pmb->ke;
@@ -179,5 +180,6 @@ void Hydro::NewBlockTimeStep() {
   pmb->new_block_dt_parabolic_ = min_dt_parabolic;
   pmb->new_block_dt_user_ = min_dt_user;
 
+  Kokkos::Profiling::popRegion(); // Hydro::NewBlockTimeStep
   return;
 }
